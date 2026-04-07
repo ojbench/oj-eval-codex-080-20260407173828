@@ -15,47 +15,72 @@ int main() {
         g[y].push_back(x);
     }
 
-    vector<int> tin(n + 1, 0), depth(n + 1, 0), parent(n + 1, 0);
+    vector<int> disc(n + 1, 0), low(n + 1, 0), parent(n + 1, -1);
     int timer = 0;
+    vector<pair<int,int>> estack;
+    estack.reserve(max(1, m));
+    vector<char> inOdd(n + 1, 0);
 
-    function<void(int,int)> dfs = [&](int u, int p) {
-        parent[u] = p;
-        tin[u] = ++timer;
+    function<void(int)> dfs = [&](int u) {
+        disc[u] = low[u] = ++timer;
         for (int v : g[u]) {
-            if (v == p) continue;
-            if (!tin[v]) {
-                depth[v] = depth[u] + 1;
-                dfs(v, u);
-            }
-        }
-    };
-    for (int i = 1; i <= n; ++i) if (!tin[i]) dfs(i, 0);
-
-    vector<long long> add(n + 1, 0);
-    // For each back-edge (u -> ancestor v), if the cycle length is odd, mark path u..v
-    for (int u = 1; u <= n; ++u) {
-        for (int v : g[u]) {
-            if (v == parent[u]) continue; // tree edge
-            if (tin[v] < tin[u]) { // v is ancestor (back edge)
-                int len = (depth[u] - depth[v]) + 1;
-                if (len % 2 == 1) {
-                    add[u] += 1;
-                    if (parent[v] != 0) add[parent[v]] -= 1;
+            if (!disc[v]) {
+                parent[v] = u;
+                estack.emplace_back(u, v);
+                dfs(v);
+                low[u] = min(low[u], low[v]);
+                if (low[v] >= disc[u]) {
+                    // Extract biconnected component edges
+                    vector<pair<int,int>> edges;
+                    while (!estack.empty()) {
+                        auto e = estack.back(); estack.pop_back();
+                        edges.push_back(e);
+                        if ((e.first == u && e.second == v) || (e.first == v && e.second == u)) break;
+                    }
+                    if (!edges.empty()) {
+                        vector<int> nodes;
+                        nodes.reserve(edges.size() * 2);
+                        for (auto &e : edges) { nodes.push_back(e.first); nodes.push_back(e.second); }
+                        sort(nodes.begin(), nodes.end());
+                        nodes.erase(unique(nodes.begin(), nodes.end()), nodes.end());
+                        int k = (int)nodes.size();
+                        vector<vector<int>> lg(k);
+                        auto idx = [&](int x) { return int(lower_bound(nodes.begin(), nodes.end(), x) - nodes.begin()); };
+                        for (auto &e : edges) {
+                            int a = idx(e.first), b = idx(e.second);
+                            if (a == b) continue;
+                            lg[a].push_back(b);
+                            lg[b].push_back(a);
+                        }
+                        vector<int> color(k, -1);
+                        bool non_bip = false;
+                        deque<int> dq;
+                        for (int s = 0; s < k && !non_bip; ++s) if (color[s] == -1) {
+                            color[s] = 0; dq.push_back(s);
+                            while (!dq.empty() && !non_bip) {
+                                int x = dq.front(); dq.pop_front();
+                                for (int y : lg[x]) {
+                                    if (color[y] == -1) { color[y] = color[x] ^ 1; dq.push_back(y); }
+                                    else if (color[y] == color[x]) { non_bip = true; break; }
+                                }
+                            }
+                        }
+                        if (non_bip) {
+                            for (int vtx : nodes) inOdd[vtx] = 1;
+                        }
+                    }
                 }
+            } else if (v != parent[u] && disc[v] < disc[u]) {
+                estack.emplace_back(u, v);
+                low[u] = min(low[u], disc[v]);
             }
         }
-    }
-
-    function<void(int)> dfs2 = [&](int u){
-        for (int v : g[u]) if (parent[v] == u) {
-            dfs2(v);
-            add[u] += add[v];
-        }
     };
-    for (int i = 1; i <= n; ++i) if (parent[i] == 0) dfs2(i);
+
+    for (int i = 1; i <= n; ++i) if (!disc[i]) dfs(i);
 
     long long not_invitable = 0;
-    for (int i = 1; i <= n; ++i) if (add[i] == 0) ++not_invitable;
+    for (int i = 1; i <= n; ++i) if (!inOdd[i]) ++not_invitable;
     cout << not_invitable << '\n';
     return 0;
 }
